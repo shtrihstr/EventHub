@@ -1,6 +1,18 @@
 import Foundation
 import Combine
 
+struct PendingPing {
+    let id: UInt64
+    let requestedAt: Date
+}
+
+enum ConnectionStatus {
+    case connected
+    case disconnected
+    case connecting
+    case paused
+}
+
 struct Subscribtion {
     let id: UInt64
     let topic: String
@@ -22,29 +34,6 @@ struct Subscribtion {
     }
 }
 
-struct PendingPing {
-    let id: UInt64
-    let requestedAt: Date
-}
-
-enum ConnectionStatus {
-    case connected
-    case disconnected
-    case connecting
-    case paused
-}
-
-extension URL {
-    func addQueryParam(name: String, value: String) -> URL {
-        var urlComponents = URLComponents(string: self.absoluteString)!
-        var queryItems: [URLQueryItem] = urlComponents.queryItems ??  []
-        let queryItem = URLQueryItem(name: name, value: value)
-        queryItems.append(queryItem)
-        urlComponents.queryItems = queryItems
-        return urlComponents.url!
-    }
-}
-
 public class EventHub {
     private let ws: WebSocketEngine
     private let encoder = RequestEncoder()
@@ -63,107 +52,6 @@ public class EventHub {
         ws = WebSocketEngine(url: url.addQueryParam(name: "auth", value: token))
         ws.onReceive = { [weak self] data in
             self?.onReceive(data: data)
-        }
-    }
-    
-    private func reconnect() {
-        guard status == .disconnected else {
-            return
-        }
-        status = .connecting
-        
-        ws.reconnect()
-        
-        ws.onConnectionError = { [weak self] in
-            self?.disconnect()
-            self?.reconnectAfter(delay: 5)
-        }
-        
-        ws.onConnect = {  [weak self] in
-            self?.status = .connected
-            self?.sendPing()
-            self?.subscribtions.values.forEach { subscribtion in
-                if let data = self?.encoder.encodeSubscribe(requestId: subscribtion.id, topic: subscribtion.topic) {
-                    self?.ws.send(data: data)
-                }
-            }
-        }
-    }
-    
-    private func sendPing() {
-        guard status == .connected else {
-            return
-        }
-        
-        // check ping losses
-        let minRequestedAt = Date() - pingTimeout
-        let expiredPings = pendingPings.values.filter { $0.requestedAt < minRequestedAt }
-        if expiredPings.count > 3 {
-            self.disconnect()
-            self.reconnectAfter(delay: 1)
-            return
-        }
-        
-        let requestId = getNextRequestId()
-        pendingPings[requestId] = .init(id: requestId,
-                                        requestedAt: Date())
-        ws.send(data: encoder.encodePing(requestId: requestId))
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + pingTimeout) { [weak self] in
-            self?.sendPing()
-        }
-    }
-    
-    private func getNextRequestId() -> UInt64 {
-        lastRequestIdLock.lock()
-        defer { lastRequestIdLock.unlock() }
-        lastRequestId += 1
-        return lastRequestId
-    }
-    
-    private func disconnect() {
-        status = .disconnected
-        ws.disconnect()
-        pendingPings = [:]
-    }
-    
-    private func reconnectAfter(delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.reconnect()
-        }
-    }
-    
-    private func removeSubscribtion(at id: UInt64) {
-        if let subscribtion = subscribtions[id] {
-            let requestId = getNextRequestId()
-            ws.send(data: encoder.encodeUnsubscribe(requestId: requestId, topic: subscribtion.topic))
-            
-            subscribtions.removeValue(forKey: id)
-            if subscribtions.count == 0 {
-                disconnect()
-            }
-        }
-    }
-
-    private func onReceive(data: Data) {
-        guard let id = decoder.decodeResponseId(data: data) else {
-            // something unexpected
-            return
-        }
-        
-        if let subscribtion = subscribtions[id] {
-            guard let message = decoder.decodeMessage(data: data) else {
-                // probably a subscribtion response
-                return
-            }
-            
-            subscribtion.subject.send(message)
-            return
-        }
-        
-        if pendingPings.keys.contains(id) {
-            pendingPings.removeValue(forKey: id)
-            return
         }
     }
     
@@ -206,10 +94,112 @@ public class EventHub {
                     self?.removeSubscribtion(at: subscribtion.id)
                 } else {
                     self?.subscribtions[canceledSubscribtion.id] = Subscribtion(canceledSubscribtion,
-                                                                               subscribersCount: canceledSubscribtion.subscribersCount - 1)
+                                                                                subscribersCount: canceledSubscribtion.subscribersCount - 1)
                 }
             }
-
         }).eraseToAnyPublisher()
+    }
+}
+
+private extension EventHub {
+    func reconnect() {
+        guard status == .disconnected else {
+            return
+        }
+        status = .connecting
+        
+        ws.reconnect()
+        
+        ws.onConnectionError = { [weak self] in
+            self?.disconnect()
+            self?.reconnectAfter(delay: 5)
+        }
+        
+        ws.onConnect = {  [weak self] in
+            self?.status = .connected
+            self?.sendPing()
+            self?.subscribtions.values.forEach { subscribtion in
+                if let data = self?.encoder.encodeSubscribe(requestId: subscribtion.id, topic: subscribtion.topic) {
+                    self?.ws.send(data: data)
+                }
+            }
+        }
+    }
+    
+    func sendPing() {
+        guard status == .connected else {
+            return
+        }
+        
+        // check ping losses
+        let minRequestedAt = Date() - pingTimeout
+        let expiredPings = pendingPings.values.filter { $0.requestedAt < minRequestedAt }
+        if expiredPings.count > 3 {
+            self.disconnect()
+            self.reconnectAfter(delay: 1)
+            return
+        }
+        
+        let requestId = getNextRequestId()
+        pendingPings[requestId] = .init(id: requestId,
+                                        requestedAt: Date())
+        ws.send(data: encoder.encodePing(requestId: requestId))
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + pingTimeout) { [weak self] in
+            self?.sendPing()
+        }
+    }
+    
+    func getNextRequestId() -> UInt64 {
+        lastRequestIdLock.lock()
+        defer { lastRequestIdLock.unlock() }
+        lastRequestId += 1
+        return lastRequestId
+    }
+    
+    func disconnect() {
+        status = .disconnected
+        ws.disconnect()
+        pendingPings = [:]
+    }
+    
+    func reconnectAfter(delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.reconnect()
+        }
+    }
+    
+    func removeSubscribtion(at id: UInt64) {
+        if let subscribtion = subscribtions[id] {
+            let requestId = getNextRequestId()
+            ws.send(data: encoder.encodeUnsubscribe(requestId: requestId, topic: subscribtion.topic))
+            
+            subscribtions.removeValue(forKey: id)
+            if subscribtions.count == 0 {
+                disconnect()
+            }
+        }
+    }
+    
+    func onReceive(data: Data) {
+        guard let id = decoder.decodeResponseId(data: data) else {
+            // something unexpected
+            return
+        }
+        
+        if let subscribtion = subscribtions[id] {
+            guard let message = decoder.decodeMessage(data: data) else {
+                // probably a subscribtion response
+                return
+            }
+            
+            subscribtion.subject.send(message)
+            return
+        }
+        
+        if pendingPings.keys.contains(id) {
+            pendingPings.removeValue(forKey: id)
+            return
+        }
     }
 }

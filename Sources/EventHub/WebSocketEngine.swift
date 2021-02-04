@@ -24,7 +24,7 @@ class WebSocketEngine : NSObject {
         task?.resume()
         receive()
     }
-
+    
     func disconnect() {
         task?.cancel(with: .goingAway, reason: .none)
         task = nil
@@ -33,8 +33,10 @@ class WebSocketEngine : NSObject {
     func send(data: Data) {
         task?.send(.string(String(data: data, encoding: .utf8)!), completionHandler: { _ in })
     }
+}
 
-    private func receive() {
+private extension WebSocketEngine {
+    func receive() {
         task?.receive { [weak self] result in
             switch result {
             case .success(let message):
@@ -45,15 +47,16 @@ class WebSocketEngine : NSObject {
                     }
                 case .data(let data):
                     self?.onReceive(data)
+                @unknown default:
+                    print("Unhandled @unknown default")
                 }
-
+                
                 self?.receive()
             case .failure(let error):
                 print("Error when receiving \(error)")
             }
         }
     }
-
 }
 
 extension WebSocketEngine: URLSessionWebSocketDelegate, URLSessionDataDelegate {

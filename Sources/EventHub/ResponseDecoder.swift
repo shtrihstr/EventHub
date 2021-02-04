@@ -17,10 +17,9 @@ public struct MessageResponse: ResponseResult {
     public let topic: String
 }
 
-
 class ResponseDecoder {
     private lazy var decoder = JSONDecoder()
-    
+
     func decodeResponseId(data: Data) -> UInt64? {
         do {
             let response = try decoder.decode(ResponseWithId.self, from: data)
@@ -29,7 +28,7 @@ class ResponseDecoder {
             return nil
         }
     }
-    
+
     func decodeMessage(data: Data) -> MessageResponse? {
         do {
             let response = try decoder.decode(Response<MessageResponse>.self, from: data)
@@ -38,5 +37,4 @@ class ResponseDecoder {
             return nil
         }
     }
-    
 }

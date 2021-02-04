@@ -27,30 +27,28 @@ class RequestEncoder {
         e.outputFormatting = .withoutEscapingSlashes
         return e
     }(JSONEncoder())
-    
-    
+
     func encodeSubscribe(requestId: UInt64, topic: String) -> Data {
         let request = Request<SubscribeRequestParams>(id: requestId,
                                                       method: .subscribe,
                                                       params: .init(topic: topic))
         return encode(request)
     }
-    
+
     func encodeUnsubscribe(requestId: UInt64, topic: String) -> Data {
         let request = Request<[String]>(id: requestId,
                                         method: .unsubscribe,
                                         params: [topic])
-        
         return encode(request)
     }
-    
+
     func encodePing(requestId: UInt64) -> Data {
         let request = Request<[String]>(id: requestId,
                                         method: .ping,
                                         params: [])
         return encode(request)
     }
-    
+
     private func encode<T: Encodable>(_ request: T) -> Data {
         let data = try! encoder.encode(request)
         return data
