@@ -61,26 +61,28 @@ public class EventHub {
     
     public init (url: URL, token: String) {
         ws = WebSocketEngine(url: url.addQueryParam(name: "auth", value: token))
-        ws.onReceive = onReceive
+        ws.onReceive = { [weak self] data in
+            self?.onReceive(data: data)
+        }
     }
     
     private func reconnect() {
-        if status != .disconnected {
+        guard status == .disconnected else {
             return
         }
         status = .connecting
         
         ws.reconnect()
         
-        ws.onConnectionError = {
-            self.disconnect()
-            self.reconnectAfter(delay: 5)
+        ws.onConnectionError = { [weak self] in
+            self?.disconnect()
+            self?.reconnectAfter(delay: 5)
         }
         
-        ws.onConnect = {
-            self.status = .connected
-            self.sendPing()
-            self.subscribtions.values.forEach { [weak self] subscribtion in
+        ws.onConnect = {  [weak self] in
+            self?.status = .connected
+            self?.sendPing()
+            self?.subscribtions.values.forEach { subscribtion in
                 if let data = self?.encoder.encodeSubscribe(requestId: subscribtion.id, topic: subscribtion.topic) {
                     self?.ws.send(data: data)
                 }
@@ -89,7 +91,7 @@ public class EventHub {
     }
     
     private func sendPing() {
-        if status != .connected {
+        guard status == .connected else {
             return
         }
         
@@ -198,12 +200,12 @@ public class EventHub {
         
         subscribtions[subscribtion.id] = subscribtion
         
-        return subscribtion.subject.handleEvents(receiveCancel: {
-            if let canceledSubscribtion = self.subscribtions[subscribtion.id] {
+        return subscribtion.subject.handleEvents(receiveCancel: { [weak self] in
+            if let canceledSubscribtion = self?.subscribtions[subscribtion.id] {
                 if canceledSubscribtion.subscribersCount <= 1 {
-                    self.removeSubscribtion(at: subscribtion.id)
+                    self?.removeSubscribtion(at: subscribtion.id)
                 } else {
-                    self.subscribtions[canceledSubscribtion.id] = Subscribtion(canceledSubscribtion,
+                    self?.subscribtions[canceledSubscribtion.id] = Subscribtion(canceledSubscribtion,
                                                                                subscribersCount: canceledSubscribtion.subscribersCount - 1)
                 }
             }
