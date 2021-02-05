@@ -1,5 +1,5 @@
 # Swift EventHub Client
-iOS client-side library for EventHub written in Swift.
+iOS client-side library for [EventHub](https://github.com/olesku/eventhub) written in Swift.
 
 ## Features
  - Keeps connection only if an active subscription exists
