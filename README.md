@@ -14,7 +14,7 @@ import Combine
 
 let client = EventHub(url: URL(string: "ws://myeventhubserver.com")!, token: "myAuthToken")
 
-let cancellable = client.subscribe(topic: "internal/web/vg/v1/test/#")
+let cancellable = client.subscribe(topic: "foo/bar")
    .receive(on: RunLoop.main)
    .sink(receiveValue: { response in
       print(response.message)
@@ -28,9 +28,8 @@ iOS 13+
 ## Installation
 ### Swift Package Manager
 
-The [Swift Package Manager](https://swift.org/package-manager/) is a tool for automating the distribution of Swift code and is integrated into the `swift` compiler. It is in early development, but Alamofire does support its use on supported platforms.
-
-Once you have your Swift package set up, adding Alamofire as a dependency is as easy as adding it to the `dependencies` value of your `Package.swift`.
+The [Swift Package Manager](https://swift.org/package-manager/) is a tool for automating the distribution of Swift code and is integrated into the `swift` compiler. 
+Once you have your Swift package set up, adding EventHub as a dependency is as easy as adding it to the `dependencies` value of your `Package.swift`.
 
 ```swift
 dependencies: [
